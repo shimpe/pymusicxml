@@ -240,6 +240,34 @@ class DurationalObject(MusicXMLComponent, ABC):
         """
         pass
 
+# --------------------------------------------- Lyrics -----------------------------------------------------------
+class Lyric(MusicXMLComponent):
+    """
+    Class representing a lyric.
+
+    :param lyric: string representing the text
+    """
+    def __init__(self, lyric: str):
+        self.lyric = lyric
+
+    def render(self) -> Sequence[ElementTree.Element]:
+        lyric_element = ElementTree.Element("lyric")
+        step_el = ElementTree.Element("text")
+        step_el.text = self.lyric
+        lyric_element.append(step_el)
+        return lyric_element,
+
+    def wrap_as_score(self) -> Score:
+        return Note(self, 1.0).wrap_as_score()
+
+    def __eq__(self, other):
+        if not isinstance(other, Lyric):
+            return False
+        return self.lyric == other.lyric
+
+    def __repr__(self):
+        return f'Lyric("{self.lyric}")'
+
 
 # --------------------------------------------- Pitch and Duration -----------------------------------------------
 
@@ -614,11 +642,12 @@ class _XMLNote(DurationalObject):
     :param voice: which voice this note belongs to within its given staff
     :param staff: which staff this note belongs to within its given part
     :param velocity: a note velocity which gets passed along and used for playback by many applications
+    :param lyric: a lyric attached to the note
     """
 
     def __init__(self, pitch, duration, ties=None, notations=(), articulations=(), notehead=None, beams=None,
                  directions=(), stemless=False, grace=False, is_chord_member=False, voice=None, staff=None,
-                 velocity=None):
+                 velocity=None, lyric=""):
 
         assert not (grace and pitch is None)  # can't have grace rests
         self.pitch = pitch
@@ -640,6 +669,7 @@ class _XMLNote(DurationalObject):
         self.voice = voice
         self.staff = staff
         self.velocity = velocity
+        self.lyric = lyric
 
     @property
     def true_length(self) -> float:
@@ -782,6 +812,13 @@ class _XMLNote(DurationalObject):
                         articulations_el.append(ElementTree.Element(articulation))
             note_element.append(notations_el)
 
+        # ------------------ add lyrics ----------------
+
+        if self.lyric != "":
+            lyric_el = ElementTree.SubElement(note_element, "lyric")
+            text_el = ElementTree.SubElement(lyric_el, "text")
+            text_el.text = str(self.lyric)
+
         # place any text annotations before the note so that they show up at the same time as the note start
         return sum((direction.render() for direction in self.directions), ()) + (note_element,)
 
@@ -821,7 +858,8 @@ class Note(_XMLNote):
 
     def __init__(self, pitch: Pitch | str, duration: Duration | str | float, ties: str = None,
                  notations=(), articulations=(), notehead: Notehead | str = None,
-                 directions: Sequence[Direction] = (), stemless: bool = False, velocity: int = None):
+                 directions: Sequence[Direction] = (), stemless: bool = False, velocity: int = None,
+                 lyric: str = ""):
 
         if isinstance(pitch, str):
             pitch = Pitch.from_string(pitch)
@@ -837,7 +875,8 @@ class Note(_XMLNote):
 
         assert isinstance(duration, Duration)
         super().__init__(pitch, duration, ties=ties, notations=notations, articulations=articulations,
-                         notehead=notehead, directions=directions, stemless=stemless, velocity=velocity)
+                         notehead=notehead, directions=directions, stemless=stemless, velocity=velocity,
+                         lyric=lyric)
 
     @property
     def starts_tie(self):
@@ -880,6 +919,7 @@ class Note(_XMLNote):
             ", notehead=\"{}\"".format(self.notehead) if self.notehead is not None else "",
             ", directions=\"{}\"".format(self.directions) if self.directions is not None else "",
             ", stemless=\"{}\"".format(self.stemless) if self.stemless is not None else ""
+            ", lyric=\"{}\"".format(self.lyric) if self.lyric is not None else ""
         )
 
 
@@ -1006,7 +1046,7 @@ class Chord(DurationalObject):
 
     def __init__(self, pitches: Sequence[Pitch | str], duration: Duration | str | float,
                  ties: str | Sequence[str | None] = None, notations=(), articulations=(),
-                 noteheads=None, directions=(), stemless: bool = False, velocity: int = None):
+                 noteheads=None, directions=(), stemless: bool = False, velocity: int = None, lyric: str = ""):
         assert isinstance(pitches, (list, tuple)) and len(pitches) > 1, "Chord should have multiple notes."
         pitches = [Pitch.from_string(pitch) if isinstance(pitch, str) else pitch for pitch in pitches]
         assert all(isinstance(pitch, Pitch) for pitch in pitches)
@@ -1037,7 +1077,8 @@ class Chord(DurationalObject):
                  notehead=noteheads if isinstance(noteheads, str) else noteheads[i] if noteheads is not None else None,
                  directions=directions if i == 0 else (),
                  stemless=stemless,
-                 velocity=velocity)
+                 velocity=velocity,
+                 lyric=lyric)
             for i, pitch in enumerate(pitches)
         )
 
@@ -1215,9 +1256,11 @@ class GraceNote(Note):
     """
     def __init__(self, pitch: Pitch | str, duration: Duration | str | float, ties: str = None,
                  notations=(), articulations=(), notehead: Notehead | str = None,
-                 directions: Sequence[Direction] = (), stemless: bool = False, slashed=False, velocity: int = None):
+                 directions: Sequence[Direction] = (), stemless: bool = False, slashed=False, velocity: int = None,
+                 lyric: str = ""):
         super().__init__(pitch,  duration, ties=ties, notations=notations, articulations=articulations,
-                         notehead=notehead, directions=directions, stemless=stemless, velocity=velocity)
+                         notehead=notehead, directions=directions, stemless=stemless, velocity=velocity,
+                         lyric=lyric)
         self.is_grace = True
         self.slashed = slashed
 
@@ -1523,7 +1566,7 @@ class KeySignature(MusicXMLComponent):
         if isinstance(interpretable_as_key_signature, KeySignature):
             return interpretable_as_key_signature
         elif isinstance(interpretable_as_key_signature, int):
-            return TraditionalKeySignature(interpretable_as_key_signature)
+            return TraditionalKeySignature(int)
         elif isinstance(interpretable_as_key_signature, str):
             interpretable_as_key_signature = interpretable_as_key_signature.lower().replace("-", "").\
                 replace("sharp", "s").replace("flat", "f")
